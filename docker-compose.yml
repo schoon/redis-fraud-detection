@@ -1,0 +1,48 @@
+# Both engines run locally so the comparison is apples-to-apples: same laptop,
+# same CPU, same dataset, no network in between.
+#
+# Ports are clear of every other demo running on this machine:
+#   leaderboard        3000 / 6379
+#   redis-v-solr-demo   3010 / 6380 / 8983
+#   redis-v-oracle-demo 3020 / 6381 / 1522
+#   this demo           3030 / 6382 / 5433
+
+services:
+  redis:
+    # Redis 8 ships the Query Engine in the core image, but this demo doesn't
+    # need it — fraud scoring is Hashes, Sorted Sets and MULTI/EXEC, the
+    # operational core of Redis rather than the search module.
+    image: redis:8
+    container_name: rfd-redis
+    ports:
+      - "6382:6379"
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    # Official image, no artificial resource cap — unlike Oracle Free's 2-CPU
+    # licence limit in the sibling demo, Postgres here shares the full host with
+    # Redis, so the throughput comparison in this demo is not caveated the way
+    # that one was.
+    image: postgres:16-alpine
+    container_name: rfd-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: fraud
+      POSTGRES_PASSWORD: demopassword
+      POSTGRES_DB: frauddb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fraud -d frauddb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

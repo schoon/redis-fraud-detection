@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Real-Time Fraud & Credit Decisioning — Redis vs Postgres</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1115;
+      --panel: #171a21;
+      --panel-2: #1d212a;
+      --line: #2a2f3a;
+      --text: #e6e8ec;
+      --muted: #8b93a3;
+      --redis: #ff4438;
+      --pg: #3b82c4;
+      --good: #35c46b;
+      --allow: #35c46b;
+      --review: #d8a02a;
+      --decline: #e04a4a;
+    }
+    * { box-sizing: border-box; }
+    html { font-size: 16px; }
+    html.present { font-size: 20px; }
+    html.present .wrap { max-width: 1500px; }
+    html.present .q { font-size: 0.95rem; }
+    html.present .shortcuts { display: none; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: -apple-system, system-ui, "Segoe UI", sans-serif; line-height: 1.45;
+    }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
+    header { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+    h1 { font-size: 1.3rem; margin: 0; font-weight: 650; }
+    .corpus { color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+    .corpus b { color: var(--text); font-weight: 600; }
+    .overview-link { margin-left: auto; color: var(--muted); font-size: 0.8rem; text-decoration: none; }
+    .overview-link:hover { color: var(--text); text-decoration: underline; }
+    .present-btn { font-size: 0.78rem; padding: 0.3rem 0.6rem; }
+    .present-btn.on { background: #2f3644; color: #fff; border-color: #4a5262; font-weight: 550; }
+    .present-btn.on::before { content: '● '; color: var(--good); font-size: 0.7em; }
+
+    .lede { font-size: 1.05rem; max-width: 46rem; margin: 1.25rem 0 1.75rem; color: #c9cdd6; }
+    .lede b { color: var(--text); font-weight: 620; }
+    .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.75rem; }
+    @media (max-width: 820px) { .stat-row { grid-template-columns: repeat(2, 1fr); } }
+    html.present .stat-row { grid-template-columns: repeat(2, 1fr); }
+    .stat { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--redis); border-radius: 10px; padding: 1rem 1.1rem; }
+    .stat-num { font-size: 2.2rem; font-weight: 700; line-height: 1.05; color: var(--redis); font-variant-numeric: tabular-nums; }
+    .stat-lbl { font-size: 0.85rem; font-weight: 550; margin-top: 0.2rem; }
+    .stat-sub { font-size: 0.72rem; color: var(--muted); margin-top: 0.15rem; font-variant-numeric: tabular-nums; }
+    .scenario-line { font-size: 0.82rem; color: var(--muted); margin: 0 0 0.5rem; }
+    .tag-pill { display: inline-block; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 0.12rem 0.55rem; margin: 0.15rem 0.15rem 0 0; font-size: 0.75rem; color: #c9cdd6; }
+    .method-line { font-size: 0.75rem; color: var(--muted); margin: 1.5rem 0 0; max-width: 46rem; }
+    .cta { background: var(--redis); border-color: var(--redis); color: #fff; font-weight: 600; padding: 0.65rem 1.3rem; font-size: 0.95rem; }
+    .cta:hover { filter: brightness(1.1); background: var(--redis); }
+    .intro-foot { margin-top: 1.5rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+
+    .env { margin-top: 2rem; border-top: 1px solid var(--line); padding-top: 1.1rem; }
+    .env h3 { margin: 0 0 0.7rem; font-size: 0.8rem; font-weight: 620; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+    .env-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+    @media (max-width: 820px) { .env-grid { grid-template-columns: 1fr; } }
+    html.present .env-grid { grid-template-columns: 1fr; }
+    .env-card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 0.7rem 0.85rem; }
+    .env-card.r { border-left: 2px solid var(--redis); }
+    .env-card.p { border-left: 2px solid var(--pg); }
+    .env-card.h { border-left: 2px solid #4a5262; }
+    .env-card h4 { margin: 0 0 0.4rem; font-size: 0.78rem; font-weight: 600; }
+    .env-row { display: flex; justify-content: space-between; gap: 0.6rem; font-size: 0.72rem; padding: 0.12rem 0; }
+    .env-row .k { color: var(--muted); }
+    .env-row .v { text-align: right; color: #d5d9e0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .env-note { font-size: 0.7rem; color: var(--muted); margin: 0.7rem 0 0; }
+
+    .scenarios { display: flex; gap: 0.4rem; margin: 1.25rem 0 0.75rem; flex-wrap: wrap; }
+    .scenarios button { background: var(--panel); color: var(--muted); border: 1px solid var(--line); padding: 0.45rem 0.85rem; border-radius: 999px; cursor: pointer; font-size: 0.85rem; font-family: inherit; }
+    .scenarios button:hover { color: var(--text); }
+    .scenarios button.active { background: var(--panel-2); color: var(--text); border-color: #3d4450; }
+    .hint { color: var(--muted); font-size: 0.8rem; margin: 0 0 0.9rem; min-height: 1.2rem; }
+    .shortcuts { color: var(--muted); font-size: 0.7rem; margin: 0.6rem 0 0; font-variant-numeric: tabular-nums; }
+    .shortcuts kbd { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 0.05rem 0.3rem; font-family: inherit; font-size: 0.95em; color: #c9cdd6; }
+
+    .controls { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
+    input[type="text"], select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem 0.75rem; font-size: 0.95rem; font-family: inherit; }
+    input[type="text"] { flex: 1; min-width: 12rem; }
+    input:focus, select:focus { outline: 1px solid #4a5262; }
+    select option { background-color: var(--panel-2); color: var(--text); }
+    label.inline { color: var(--muted); font-size: 0.8rem; display: flex; align-items: center; gap: 0.35rem; }
+    .filters { display: none; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.6rem; align-items: center; }
+    .filters.show { display: flex; }
+    button.ghost { padding: 0.5rem 0.9rem; font-size: 0.85rem; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; font-family: inherit; }
+    button.ghost:hover { background: var(--panel-2); }
+
+    .summary { display: grid; grid-template-columns: 1fr auto 1fr; gap: 1rem; align-items: center; margin: 1.5rem 0 0.5rem; }
+    .metric { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0.9rem 1rem; }
+    .metric .engine { font-size: 0.7rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+    .metric .time { font-size: 2rem; font-weight: 680; font-variant-numeric: tabular-nums; line-height: 1.15; }
+    .metric .sub { font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .metric.redis { border-left: 3px solid var(--redis); }
+    .metric.pg { border-left: 3px solid var(--pg); }
+    .verdict { text-align: center; }
+    .verdict .x { font-size: 1.7rem; font-weight: 700; color: var(--good); font-variant-numeric: tabular-nums; }
+    .verdict .lbl { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .verdict.warn .x { color: #d8a02a; font-size: 1rem; }
+
+    .decision-row { display: flex; gap: 0.8rem; margin: 1rem 0; flex-wrap: wrap; }
+    .decision-row[hidden] { display: none; }
+    .decision-pill { flex: 1; min-width: 12rem; border-radius: 10px; padding: 0.9rem 1.1rem; border: 1px solid var(--line); background: var(--panel); }
+    .decision-pill .who { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .decision-pill .what { font-size: 1.5rem; font-weight: 700; margin-top: 0.2rem; }
+    .decision-pill.ALLOW .what { color: var(--allow); }
+    .decision-pill.REVIEW .what { color: var(--review); }
+    .decision-pill.DECLINE .what { color: var(--decline); }
+    .decision-pill .risk { font-size: 0.75rem; color: var(--muted); margin-top: 0.2rem; }
+
+    .bars { margin: 0.25rem 0 1.25rem; }
+    .bar-row { display: grid; grid-template-columns: 3.6rem 1fr 5.5rem; gap: 0.6rem; align-items: center; margin: 0.3rem 0; }
+    .bar-row .name { font-size: 0.75rem; color: var(--muted); }
+    .bar-track { background: var(--panel); border-radius: 4px; height: 0.85rem; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 4px; transition: width 0.18s ease; }
+    .bar-fill.redis { background: var(--redis); }
+    .bar-fill.pg { background: var(--pg); }
+    .bar-row .val { font-size: 0.78rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+
+    .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 860px) { .panes { grid-template-columns: 1fr; } .summary { grid-template-columns: 1fr; } }
+    .pane { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+    .pane h2 { margin: 0; padding: 0.7rem 0.9rem; font-size: 0.85rem; font-weight: 600; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
+    .pane.redis h2 { color: var(--redis); }
+    .pane.pg h2 { color: var(--pg); }
+    .pane h2 .count { color: var(--muted); font-size: 0.75rem; font-weight: 400; font-variant-numeric: tabular-nums; }
+    .q { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.7rem; color: var(--muted); padding: 0.55rem 0.9rem; border-bottom: 1px solid var(--line); word-break: break-all; background: #12151b; min-height: 4rem; max-height: 5.5rem; overflow-y: auto; white-space: pre-wrap; }
+    .factor-list { padding: 0.7rem 0.9rem; }
+    .factor-row { display: flex; justify-content: space-between; gap: 0.6rem; padding: 0.35rem 0; border-bottom: 1px solid var(--line); font-size: 0.8rem; }
+    .factor-row:last-child { border-bottom: none; }
+    .factor-row .fname { font-weight: 600; }
+    .factor-row .fpts { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .factor-row .fdetail { color: var(--muted); font-size: 0.76rem; flex: 1; margin-left: 0.6rem; }
+    .empty { padding: 1.2rem 0.9rem; color: var(--muted); font-style: italic; text-align: center; font-size: 0.85rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    th { text-align: left; padding: 0.4rem 0.9rem; color: var(--muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500; }
+    td { padding: 0.4rem 0.9rem; border-top: 1px solid var(--line); }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .nm { font-weight: 550; }
+    .tag { font-size: 0.68rem; color: var(--muted); }
+
+    .note { margin-top: 1.5rem; padding: 0.85rem 1rem; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid #4a5262; border-radius: 8px; font-size: 0.78rem; color: var(--muted); }
+    .note b { color: var(--text); font-weight: 600; }
+    .note code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #12151b; padding: 0.05rem 0.3rem; border-radius: 3px; }
+
+    .progress { height: 2px; background: transparent; border-radius: 2px; margin: 0.5rem 0 0; overflow: hidden; }
+    body.loading .progress { background: var(--line); }
+    body.loading .progress::after { content: ''; display: block; height: 100%; width: 35%; background: var(--redis); animation: slide 0.9s ease-in-out infinite; }
+    @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(340%); } }
+    body.loading .summary, body.loading .bars, body.loading .decision-row { opacity: 0.4; }
+    .summary, .bars, .decision-row { transition: opacity 0.12s ease; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Fraud & Credit Decisioning</h1>
+    <span class="corpus" id="corpus">checking corpus…</span>
+    <a href="#" id="backToOverview" class="overview-link" hidden>← overview</a>
+    <button id="presentBtn" class="present-btn" aria-pressed="false" hidden>Aa presentation mode</button>
+  </header>
+
+  <section id="landing">
+    <p class="lede">
+      Real-time credit/fraud decisioning on <b>100,000 customers</b> and
+      <b>5,000,000 transactions</b>, running on this laptop. The same data, the
+      same scoring logic, in <b>Redis</b> and in <b>Postgres</b> — with the
+      latency of each shown live.
+    </p>
+
+    <div class="stat-row" id="statRow"></div>
+
+    <p class="scenario-line">
+      Six scenarios from a real-time credit decisioning workflow:
+      <span class="tag-pill">score &amp; decide</span>
+      <span class="tag-pill">velocity</span>
+      <span class="tag-pill">portfolio breakdown</span>
+      <span class="tag-pill">write path</span>
+      <span class="tag-pill">concurrent throughput</span>
+      <span class="tag-pill">architecture</span>
+    </p>
+
+    <div class="intro-foot">
+      <button id="enterDemo" class="cta">Open the demo →</button>
+    </div>
+
+    <div class="env" id="env">
+      <h3>Demo harness</h3>
+      <div class="env-grid" id="envGrid"></div>
+      <p class="env-note" id="envNote"></p>
+    </div>
+
+    <p class="method-line">
+      Every customer's last 50 transactions live identically in both engines.
+      Scoring is one shared function fed by whichever store answers — a speed
+      difference is a data-access difference, never a scoring difference.
+      Method and full numbers are in the README.
+    </p>
+  </section>
+
+  <div id="demo" hidden>
+    <div class="scenarios" id="scenarios">
+      <button data-s="score">Score &amp; decision</button>
+      <button data-s="velocity">Velocity</button>
+      <button data-s="breakdown">Breakdown</button>
+      <button data-s="writepath">Write path</button>
+      <button data-s="throughput">Throughput</button>
+      <button data-s="architecture">Architecture</button>
+    </div>
+    <p class="hint" id="hint"></p>
+    <p class="shortcuts">
+      <kbd>1</kbd>–<kbd>6</kbd> scenarios · <kbd>Enter</kbd> re-run ·
+      <kbd>P</kbd> presentation mode · <kbd>Esc</kbd> overview
+    </p>
+
+    <div class="controls">
+      <input type="text" id="q" placeholder="customer id, e.g. C000012345" autocomplete="off" spellcheck="false">
+      <button class="ghost" id="randomCustomer" type="button">🎲 random customer</button>
+      <label class="inline" id="scenarioSelectWrap">scenario
+        <select id="scenarioSelect"></select>
+      </label>
+      <label class="inline">runs
+        <select id="runs">
+          <option value="1">1</option>
+          <option value="5" selected>5</option>
+          <option value="11">11</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="filters" id="velocityControls">
+      <label class="inline">window
+        <select id="windowMinutes">
+          <option value="15">15 min</option>
+          <option value="60" selected>1 hour</option>
+          <option value="1440">24 hours</option>
+          <option value="10080">7 days</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="decision-row" id="decisionRow" hidden></div>
+
+    <div class="summary">
+      <div class="metric redis">
+        <div class="engine">Redis</div>
+        <div class="time" id="rt">—</div>
+        <div class="sub" id="rsub">&nbsp;</div>
+      </div>
+      <div class="verdict" id="verdict">
+        <div class="x" id="vx">—</div>
+        <div class="lbl">faster</div>
+      </div>
+      <div class="metric pg">
+        <div class="engine">Postgres</div>
+        <div class="time" id="pt">—</div>
+        <div class="sub" id="psub">&nbsp;</div>
+      </div>
+    </div>
+
+    <div class="bars" id="bars"></div>
+
+    <div class="panes">
+      <section class="pane redis">
+        <h2>Redis <span class="count" id="rcount"></span></h2>
+        <div class="q" id="rq"></div>
+        <div id="rbody"></div>
+      </section>
+      <section class="pane pg">
+        <h2>Postgres <span class="count" id="pcount"></span></h2>
+        <div class="q" id="pq"></div>
+        <div id="pbody"></div>
+      </section>
+    </div>
+
+    <div class="progress" id="progress"></div>
+    <div class="note" id="method"></div>
+  </div>
+</div>
+
+<script>
+  const el = (id) => document.getElementById(id);
+  let scenario = 'score';
+  let inflight = 0;
+  let lastCustomerId = '';
+
+  const SCENARIOS = {
+    score: { hint: 'Pick a customer and a candidate-transaction scenario. Both engines fetch the same last-50-transaction history and score it with the same function.', showsScenarioSelect: true },
+    velocity: { hint: 'How many of this customer\'s real transactions fall in a trailing window. Redis ZCOUNT vs an indexed Postgres COUNT(*).', showsVelocity: true },
+    breakdown: { hint: 'Portfolio-wide counts and totals by category and decision. Redis reads a maintained counter; Postgres runs GROUP BY over 5,000,000 rows.', noQuery: true },
+    writepath: { hint: 'Append one new transaction and update the rolling score. Redis: one MULTI/EXEC. Postgres: an explicit transaction, no trimming — the ledger keeps growing.', noQuery: true, isWrite: true },
+    throughput: { hint: 'QPS and tail latency under concurrent load. Measured by `npm run bench`, not from this page.', noQuery: true },
+    architecture: { hint: 'What actually got built on each side, read live.', noQuery: true },
+  };
+
+  function setPresent(on) {
+    document.documentElement.classList.toggle('present', on);
+    const btn = el('presentBtn');
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    try { localStorage.setItem('rfd-present', on ? '1' : '0'); } catch { /* ignore */ }
+  }
+  el('presentBtn').addEventListener('click', () => setPresent(!document.documentElement.classList.contains('present')));
+
+  function showDemo(on) {
+    el('landing').hidden = on;
+    el('demo').hidden = !on;
+    el('backToOverview').hidden = !on;
+    el('presentBtn').hidden = false;
+    history.replaceState(null, '', on ? '#demo' : '#');
+    if (on) setScenario(scenario);
+  }
+  el('enterDemo').addEventListener('click', () => showDemo(true));
+  el('backToOverview').addEventListener('click', (e) => { e.preventDefault(); showDemo(false); });
+
+  async function loadScenarioOptions() {
+    const meta = await (await fetch('/api/meta')).json();
+    el('scenarioSelect').replaceChildren(...meta.scenarios.map((s) => {
+      const o = document.createElement('option');
+      o.value = s.key; o.textContent = s.label;
+      o.title = s.description;
+      return o;
+    }));
+  }
+
+  function setScenario(next) {
+    scenario = next;
+    for (const b of el('scenarios').children) b.classList.toggle('active', b.dataset.s === next);
+    const cfg = SCENARIOS[next];
+    el('hint').textContent = cfg.hint;
+    el('scenarioSelectWrap').style.display = cfg.showsScenarioSelect ? '' : 'none';
+    el('velocityControls').classList.toggle('show', Boolean(cfg.showsVelocity));
+    el('q').style.display = cfg.noQuery && next !== 'writepath' ? 'none' : '';
+    el('q').placeholder = next === 'writepath' ? 'customer id (optional)' : 'customer id, e.g. C000012345';
+    el('randomCustomer').style.display = next === 'throughput' || next === 'breakdown' || next === 'architecture' ? 'none' : '';
+    document.getElementById('runs').closest('label').style.display = (next === 'throughput' || next === 'architecture') ? 'none' : '';
+    el('decisionRow').hidden = next !== 'score';
+    search();
+  }
+
+  function span(cls, text) {
+    const s = document.createElement('span');
+    s.className = cls; s.textContent = text;
+    return s;
+  }
+
+  function renderBars(redisMs, pgMs) {
+    const max = Math.max(redisMs, pgMs, 0.001);
+    el('bars').replaceChildren(...[['Redis', redisMs, 'redis'], ['Postgres', pgMs, 'pg']].map(([name, ms, cls]) => {
+      const row = document.createElement('div');
+      row.className = 'bar-row';
+      const n = document.createElement('div'); n.className = 'name'; n.textContent = name;
+      const track = document.createElement('div'); track.className = 'bar-track';
+      const fill = document.createElement('div'); fill.className = `bar-fill ${cls}`;
+      fill.style.width = `${Math.max((ms / max) * 100, 0.6)}%`;
+      track.append(fill);
+      const v = document.createElement('div'); v.className = 'val'; v.textContent = `${ms.toFixed(3)} ms`;
+      row.append(n, track, v);
+      return row;
+    }));
+  }
+
+  function renderFactors(container, factors) {
+    if (!factors.length) {
+      container.innerHTML = '<div class="empty">No risk factors triggered</div>';
+      return;
+    }
+    const wrap = document.createElement('div');
+    wrap.className = 'factor-list';
+    wrap.replaceChildren(...factors.map((f) => {
+      const row = document.createElement('div'); row.className = 'factor-row';
+      const top = document.createElement('div');
+      top.style.display = 'flex'; top.style.justifyContent = 'space-between'; top.style.width = '100%';
+      top.append(span('fname', f.factor.replace(/_/g, ' ')), span('fpts', `+${f.points}`));
+      const detail = document.createElement('div'); detail.className = 'fdetail'; detail.textContent = f.detail;
+      row.append(top, detail);
+      row.style.flexDirection = 'column'; row.style.alignItems = 'stretch';
+      return row;
+    }));
+    container.replaceChildren(wrap);
+  }
+
+  function decisionPill(who, cls, result) {
+    const d = document.createElement('div');
+    d.className = `decision-pill ${cls}`;
+    const w = document.createElement('div'); w.className = 'who'; w.textContent = who;
+    const what = document.createElement('div'); what.className = 'what'; what.textContent = cls;
+    const risk = document.createElement('div'); risk.className = 'risk'; risk.textContent = `risk score ${result.risk}`;
+    d.append(w, what, risk);
+    return d;
+  }
+
+  async function runScore(stale) {
+    const customerId = el('q').value.trim();
+    const scenarioKey = el('scenarioSelect').value;
+    const runs = el('runs').value;
+    const params = new URLSearchParams({ scenario: scenarioKey, runs });
+    if (customerId) params.set('customer', customerId);
+    const d = await (await fetch(`/api/score?${params}`)).json();
+    if (d.error) throw new Error(d.error);
+    if (stale()) return;
+    lastCustomerId = d.customer.id;
+    el('q').value = d.customer.id;
+
+    el('rt').textContent = `${d.redis.ms.toFixed(3)} ms`;
+    el('pt').textContent = `${d.postgres.ms.toFixed(3)} ms`;
+    el('rsub').textContent = `median of ${d.runs} · risk ${d.redis.risk}`;
+    el('psub').textContent = `median of ${d.runs} · risk ${d.postgres.risk}`;
+    el('verdict').classList.toggle('warn', !d.agree);
+    el('vx').textContent = d.agree ? `${d.speedup}×` : 'engines disagree';
+    el('rcount').textContent = d.redis.decision;
+    el('pcount').textContent = d.postgres.decision;
+    el('rq').textContent = `Customer ${d.customer.id} · credit ${d.customer.credit_score} · ${d.customer.city}, ${d.customer.state}\nCandidate: $${d.candidate.amt.toFixed(2)} ${d.candidate.cat} @ (${d.candidate.lat.toFixed(2)}, ${d.candidate.lon.toFixed(2)})`;
+    el('pq').textContent = el('rq').textContent;
+    renderFactors(el('rbody'), d.redis.factors);
+    renderFactors(el('pbody'), d.postgres.factors);
+    renderBars(d.redis.ms, d.postgres.ms);
+
+    el('decisionRow').hidden = false;
+    el('decisionRow').replaceChildren(decisionPill('Redis says', d.redis.decision, d.redis), decisionPill('Postgres says', d.postgres.decision, d.postgres));
+
+    el('method').innerHTML =
+      `<b>${d.scenario.label}${d.scenario.simulated ? ' (simulated)' : ''}.</b> ${d.scenario.description} `
+      + 'Both engines fetch this customer\'s real last-50-transaction history and run it through the identical <code>scoreTransaction()</code> function — '
+      + 'a latency difference here is purely how fast each store handed back the data.';
+  }
+
+  async function runVelocity(stale) {
+    const customerId = el('q').value.trim();
+    const windowMinutes = el('windowMinutes').value;
+    const runs = el('runs').value;
+    const params = new URLSearchParams({ windowMinutes, runs });
+    if (customerId) params.set('customer', customerId);
+    const d = await (await fetch(`/api/velocity?${params}`)).json();
+    if (d.error) throw new Error(d.error);
+    if (stale()) return;
+    lastCustomerId = d.customer;
+    el('q').value = d.customer;
+
+    el('rt').textContent = `${d.redis.count}`;
+    el('pt').textContent = `${d.postgres.count}`;
+    el('rsub').textContent = `${d.redis.ms.toFixed(3)} ms · median of ${d.runs}`;
+    el('psub').textContent = `${d.postgres.ms.toFixed(3)} ms · median of ${d.runs}`;
+    el('verdict').classList.toggle('warn', !d.countsMatch);
+    el('vx').textContent = d.countsMatch ? `${d.speedup}×` : 'counts differ';
+    el('rcount').textContent = `${d.windowMinutes} min window`;
+    el('pcount').textContent = `${d.windowMinutes} min window`;
+    el('rq').textContent = d.redis.query;
+    el('pq').textContent = d.postgres.query;
+    el('rbody').innerHTML = `<div class="empty">${d.redis.count} transaction${d.redis.count===1?'':'s'} in the window</div>`;
+    el('pbody').innerHTML = `<div class="empty">${d.postgres.count} transaction${d.postgres.count===1?'':'s'} in the window</div>`;
+    renderBars(d.redis.ms, d.postgres.ms);
+    el('method').innerHTML = 'One O(log N) range count over a Sorted Set (ZCOUNT) against an indexed range scan (COUNT(*) using the (customer_id, occurred_at) index). Counted as of this customer\'s own most recent real transaction.';
+  }
+
+  function rowsToTable(rows, cols) {
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const htr = document.createElement('tr');
+    htr.append(...cols.map(([label]) => { const th = document.createElement('th'); th.textContent = label; return th; }));
+    thead.append(htr);
+    const tbody = document.createElement('tbody');
+    tbody.replaceChildren(...rows.map((row) => {
+      const tr = document.createElement('tr');
+      tr.append(...cols.map(([, key, cls]) => { const td = document.createElement('td'); if (cls) td.className = cls; td.textContent = row[key]; return td; }));
+      return tr;
+    }));
+    table.append(thead, tbody);
+    return table;
+  }
+
+  async function runBreakdown(stale) {
+    const runs = el('runs').value;
+    const d = await (await fetch(`/api/breakdown?runs=${runs}`)).json();
+    if (d.error) throw new Error(d.error);
+    if (stale()) return;
+
+    el('rt').textContent = `${d.redis.ms.toFixed(3)} ms`;
+    el('pt').textContent = `${d.postgres.ms.toFixed(3)} ms`;
+    el('rsub').textContent = `median of ${d.runs} · ${d.redis.rows.length} rows`;
+    el('psub').textContent = `median of ${d.runs} · ${d.postgres.rows.length} rows`;
+    el('verdict').classList.toggle('warn', !d.totalsMatch);
+    el('vx').textContent = d.totalsMatch ? `${d.speedup}×` : 'totals differ';
+    el('rcount').textContent = ''; el('pcount').textContent = '';
+    el('rq').textContent = d.redis.query;
+    el('pq').textContent = d.postgres.query;
+    const sorted = (rows) => [...rows].sort((a, b) => b.count - a.count).slice(0, 12);
+    el('rbody').replaceChildren(rowsToTable(sorted(d.redis.rows), [['Category','category'],['Decision','decision'],['Count','count','num']]));
+    el('pbody').replaceChildren(rowsToTable(sorted(d.postgres.rows), [['Category','category'],['Decision','decision'],['Count','count','num']]));
+    renderBars(d.redis.ms, d.postgres.ms);
+    el('method').innerHTML =
+      '<b>Different computational strategies, not the same query answered twice.</b> Redis reads a Hash of counters maintained with '
+      + '<code>HINCRBY</code> as transactions land — O(1) regardless of portfolio size. Postgres runs <code>GROUP BY</code> over the full '
+      + '5,000,000-row table at read time, using a parallel index-only scan. Redis pays at write time; Postgres pays at read time. '
+      + 'Both are shown, and neither is a trick — see docs/METHODOLOGY.md for the EXPLAIN ANALYZE evidence.';
+  }
+
+  async function runWritepath(stale) {
+    const customerId = el('q').value.trim();
+    const body = customerId ? { customer: customerId } : {};
+    const d = await (await fetch('/api/writepath', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })).json();
+    if (d.error) throw new Error(d.error);
+    if (stale()) return;
+    lastCustomerId = d.customer;
+    el('q').value = d.customer;
+
+    el('rt').textContent = `${d.redis.ms.toFixed(3)} ms`;
+    el('pt').textContent = `${d.postgres.ms.toFixed(3)} ms`;
+    el('rsub').textContent = 'one write, one round trip';
+    el('psub').textContent = 'one write, one transaction';
+    el('verdict').classList.remove('warn');
+    el('vx').textContent = `${d.speedup}×`;
+    el('rcount').textContent = d.decision; el('pcount').textContent = d.decision;
+    el('rq').textContent = d.redis.command;
+    el('pq').textContent = d.postgres.command;
+    el('rbody').innerHTML = `<div class="empty">Appended $${d.transaction.amt.toFixed(2)} ${d.transaction.cat} — decision ${d.decision}, risk ${d.risk}</div>`;
+    el('pbody').innerHTML = el('rbody').innerHTML;
+    renderBars(d.redis.ms, d.postgres.ms);
+    el('method').innerHTML =
+      'Appends the new transaction, trims the window, and updates the rolling score — atomically. Redis: one <code>MULTI</code>/<code>EXEC</code> '
+      + 'across two keys (four operations, one round trip). Postgres: an explicit transaction across two statements, and unlike Redis it does not trim — '
+      + 'the ledger keeps every row, which is the honest and realistic role for it. <b>This performs a real write on both engines.</b>';
+  }
+
+  async function runThroughput(stale) {
+    let d;
+    try {
+      d = await (await fetch('/api/bench-results')).json();
+    } catch { d = { error: 'no results' }; }
+    if (stale()) return;
+    if (d.error) {
+      el('rt').textContent = '—'; el('pt').textContent = '—';
+      el('rbody').innerHTML = '<div class="empty">not run yet</div>';
+      el('pbody').innerHTML = '<div class="empty">not run yet</div>';
+      el('bars').replaceChildren();
+      el('method').innerHTML = 'Run <b>npm run bench</b> in the project directory, then reload. Options: <code>--concurrency=N</code> <code>--duration=seconds</code>.';
+      return;
+    }
+    const r = d.engines.redis, p = d.engines.postgres;
+    el('rt').textContent = `${r.qps.toLocaleString()} q/s`;
+    el('pt').textContent = `${p.qps.toLocaleString()} q/s`;
+    el('rsub').textContent = `p50 ${r.p50}ms · p99 ${r.p99}ms`;
+    el('psub').textContent = `p50 ${p.p50}ms · p99 ${p.p99}ms`;
+    el('verdict').classList.remove('warn');
+    el('vx').textContent = `${(r.qps / p.qps).toFixed(2)}×`;
+    el('rcount').textContent = `${d.concurrency} workers`; el('pcount').textContent = `${d.concurrency} workers`;
+    el('rq').textContent = `concurrency=${d.concurrency} duration=${d.durationSec}s cores=${d.cores}`;
+    el('pq').textContent = el('rq').textContent;
+    const rows = (e) => [['throughput', `${e.qps.toLocaleString()} q/s`], ['p50', `${e.p50} ms`], ['p95', `${e.p95} ms`], ['p99', `${e.p99} ms`], ['max', `${e.max} ms`], ['client CPU', `${e.clientCpuRatio} of ${d.cores} cores`]];
+    const toRows = (data) => { const tb = document.createElement('div'); tb.replaceChildren(...data.map(([k,v]) => { const row=document.createElement('div'); row.className='factor-row'; row.append(span('fname',k), span('fpts',v)); return row; })); return tb; };
+    el('rbody').replaceChildren(toRows(rows(r)));
+    el('pbody').replaceChildren(toRows(rows(p)));
+    renderBars(r.p99, p.p99);
+    el('method').innerHTML = 'Real-time score &amp; decision under concurrent load, worker_threads, engines run sequentially so they never compete for the same cores. Full sweep and findings in docs/METHODOLOGY.md.';
+  }
+
+  async function runArchitecture(stale) {
+    const d = await (await fetch('/api/architecture')).json();
+    if (d.error) throw new Error(d.error);
+    if (stale()) return;
+    el('rt').textContent = `${d.redis.keys.toLocaleString()}`;
+    el('pt').textContent = `${d.postgres.transactions.toLocaleString()}`;
+    el('rsub').textContent = 'keys';
+    el('psub').textContent = 'rows in transactions';
+    el('verdict').classList.remove('warn');
+    el('vx').textContent = '—';
+    el('rcount').textContent = ''; el('pcount').textContent = '';
+    el('rq').textContent = `${d.redis.layout.hash}   ${d.redis.layout.zset}   ${d.redis.layout.counters}`;
+    el('pq').textContent = `${d.postgres.sizeOnDisk.txn_size} transactions, ${d.postgres.sizeOnDisk.cust_size} customers`;
+    el('rbody').innerHTML = `<div class="empty">${d.redis.note}</div>`;
+    el('pbody').replaceChildren(rowsToTable(d.postgres.indexes, [['Index','name'],['Definition','def']]));
+    el('bars').replaceChildren();
+    el('method').innerHTML = 'Read live from both engines, not hardcoded. Redis: a Hash + a capped Sorted Set per customer, plus one maintained counter Hash. Postgres: two tables, four indexes, one FK constraint.';
+  }
+
+  async function search() {
+    const seq = ++inflight;
+    const stale = () => seq !== inflight;
+    document.body.classList.add('loading');
+    try {
+      if (scenario === 'score') await runScore(stale);
+      else if (scenario === 'velocity') await runVelocity(stale);
+      else if (scenario === 'breakdown') await runBreakdown(stale);
+      else if (scenario === 'writepath') await runWritepath(stale);
+      else if (scenario === 'throughput') await runThroughput(stale);
+      else if (scenario === 'architecture') await runArchitecture(stale);
+    } catch (err) {
+      el('method').innerHTML = `<b>Error:</b> ${err.message}`;
+    } finally {
+      if (seq === inflight) document.body.classList.remove('loading');
+    }
+  }
+
+  let debounce;
+  el('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(debounce); search(); } });
+  el('randomCustomer').addEventListener('click', async () => {
+    const s = await (await fetch('/api/sample-customer')).json();
+    el('q').value = s.id;
+    search();
+  });
+  el('scenarioSelect').addEventListener('change', search);
+  el('runs').addEventListener('change', search);
+  el('windowMinutes').addEventListener('change', search);
+  el('scenarios').addEventListener('click', (e) => { if (e.target.dataset.s) setScenario(e.target.dataset.s); });
+
+  const SCENARIO_KEYS = ['score', 'velocity', 'breakdown', 'writepath', 'throughput', 'architecture'];
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { el('q').blur(); showDemo(false); return; }
+    const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName);
+    if (typing && e.key !== 'Enter') return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'Enter') { e.preventDefault(); search(); return; }
+    if (el('landing').hidden === false) { if (e.key === 'Enter' || e.key === ' ') showDemo(true); return; }
+    const n = Number(e.key);
+    if (n >= 1 && n <= SCENARIO_KEYS.length) { setScenario(SCENARIO_KEYS[n - 1]); return; }
+    if (e.key === 'p' || e.key === 'P') setPresent(!document.documentElement.classList.contains('present'));
+  });
+
+  (async () => {
+    try {
+      const e = await (await fetch('/api/environment')).json();
+      const card = (cls, title, rows) => {
+        const d = document.createElement('div'); d.className = `env-card ${cls}`;
+        const h = document.createElement('h4'); h.textContent = title; d.append(h);
+        for (const [k, v] of rows) {
+          if (v === null || v === undefined || v === '') continue;
+          const row = document.createElement('div'); row.className = 'env-row';
+          row.append(span('k', k), span('v', String(v)));
+          d.append(row);
+        }
+        return d;
+      };
+      el('envGrid').replaceChildren(
+        card('r', 'Redis', [['version', e.redis.version], ['mode', e.redis.mode], ['keys', e.redis.keys.toLocaleString()], ['port', e.redis.port]]),
+        card('p', 'Postgres', [['version', e.postgres.version], ['customers', e.postgres.customers?.toLocaleString()], ['transactions', e.postgres.transactions?.toLocaleString()], ['port', e.postgres.port]]),
+        card('h', 'Harness', [['customers', e.corpus.customers.toLocaleString()], ['txns/customer', e.corpus.txnsPerCustomer], ['total txns', e.corpus.totalTxns.toLocaleString()], ['node', e.host.node], ['host', `${e.host.platform}, ${e.host.cores} cores`]]),
+      );
+      el('envNote').innerHTML = 'Both engines run in Docker on this machine — same CPU, same dataset, no network between them. Neither engine has an artificial resource cap here.';
+    } catch { el('env').hidden = true; }
+
+    try {
+      const s = await (await fetch('/api/stats')).json();
+      const match = s.redis.customers === s.postgres.customers;
+      const text = `<b>${s.redis.customers.toLocaleString()}</b> customers in Redis · <b>${s.postgres.customers.toLocaleString()}</b> in Postgres`
+        + (match ? ' · identical corpus' : ' · <span style="color:#d8a02a">COUNTS DIFFER</span>');
+      el('corpus').innerHTML = text;
+    } catch { el('corpus').textContent = 'could not read corpus stats — is the server seeded?'; }
+
+    try {
+      const [envStat, benchStat] = await Promise.all([
+        fetch('/api/environment').then((r) => r.json()),
+        fetch('/api/bench-results').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      ]);
+      const stat = (num, lbl, sub) => {
+        const d = document.createElement('div'); d.className = 'stat';
+        const n = document.createElement('div'); n.className = 'stat-num'; n.textContent = num;
+        const l = document.createElement('div'); l.className = 'stat-lbl'; l.textContent = lbl;
+        const s = document.createElement('div'); s.className = 'stat-sub'; s.textContent = sub;
+        d.append(n, l, s);
+        return d;
+      };
+      const cards = [
+        stat(envStat.corpus.totalTxns.toLocaleString(), 'transactions, identical in both engines', `${envStat.corpus.customers.toLocaleString()} customers × ${envStat.corpus.txnsPerCustomer} each`),
+      ];
+      if (benchStat) {
+        const r = benchStat.engines.redis, p = benchStat.engines.postgres;
+        cards.push(
+          stat(`${(r.qps / p.qps).toFixed(1)}×`, 'higher throughput, Redis', `${r.qps.toLocaleString()} q/s vs ${p.qps.toLocaleString()} q/s at ${benchStat.concurrency}-way concurrency`),
+          stat(`${r.p50} ms`, 'p50 latency, real-time score', `vs ${p.p50} ms Postgres, same query, same host`),
+        );
+      }
+      cards.push(stat('0', 'artificial CPU caps', 'same Docker host, same cores, neither engine throttled'));
+      el('statRow').replaceChildren(...cards);
+    } catch {
+      el('statRow').innerHTML = '<div class="stat"><div class="stat-num">—</div><div class="stat-lbl">stats unavailable</div><div class="stat-sub">is the server running?</div></div>';
+    }
+
+    await loadScenarioOptions();
+    try { setPresent(localStorage.getItem('rfd-present') === '1'); } catch { /* ignore */ }
+    showDemo(location.hash === '#demo');
+  })();
+</script>
+</body>
+</html>

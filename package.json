@@ -1,0 +1,23 @@
+{
+  "name": "redis-fraud-detection",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Real-time credit/fraud decisioning: Redis vs Postgres over an identical 100k-customer, 5M-transaction dataset",
+  "main": "src/server.js",
+  "scripts": {
+    "generate": "node src/generate.js",
+    "seed:redis": "node src/seed-redis.js",
+    "seed:postgres": "node src/seed-postgres.js",
+    "seed": "npm run generate && npm run seed:redis && npm run seed:postgres",
+    "start": "node src/server.js",
+    "demo": "docker compose up -d && npm run seed && npm start",
+    "bench": "node src/bench.js",
+    "validate": "node src/validate.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "pg": "^8.13.0",
+    "pg-copy-streams": "^7.0.0",
+    "redis": "^4.7.1"
+  }
+}
