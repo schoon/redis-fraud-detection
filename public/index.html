@@ -92,6 +92,7 @@
     button.ghost:hover { background: var(--panel-2); }
 
     .summary { display: grid; grid-template-columns: 1fr auto 1fr; gap: 1rem; align-items: center; margin: 1.5rem 0 0.5rem; }
+    .summary[hidden] { display: none; }
     .metric { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0.9rem 1rem; }
     .metric .engine { font-size: 0.7rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
     .metric .time { font-size: 2rem; font-weight: 680; font-variant-numeric: tabular-nums; line-height: 1.15; }
@@ -123,6 +124,7 @@
     .bar-row .val { font-size: 0.78rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
 
     .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .panes[hidden] { display: none; }
     @media (max-width: 860px) { .panes { grid-template-columns: 1fr; } .summary { grid-template-columns: 1fr; } }
     .pane { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
     .pane h2 { margin: 0; padding: 0.7rem 0.9rem; font-size: 0.85rem; font-weight: 600; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
@@ -154,6 +156,37 @@
     @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(340%); } }
     body.loading .summary, body.loading .bars, body.loading .decision-row { opacity: 0.4; }
     .summary, .bars, .decision-row { transition: opacity 0.12s ease; }
+
+    .live-toolbar { display: flex; align-items: center; gap: 0.9rem; margin: 0.25rem 0 1rem; flex-wrap: wrap; }
+    .live-hint { color: var(--muted); font-size: 0.82rem; }
+    .live-panes { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 860px) { .live-panes { grid-template-columns: 1fr; } }
+    .live-pane { display: flex; flex-direction: column; }
+    .live-stats { display: flex; gap: 1.5rem; padding: 0.9rem 0.9rem 0.4rem; }
+    .live-num { font-size: 1.9rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.05; }
+    .pane.redis .live-num { color: var(--redis); }
+    .pane.pg .live-num { color: var(--pg); }
+    .live-lbl { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.15rem; }
+    .live-totals { padding: 0 0.9rem 0.75rem; font-size: 0.75rem; color: var(--muted); border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+    .live-list { height: 460px; overflow: hidden; }
+    .live-row {
+      display: grid; grid-template-columns: 6.5rem 4.2rem 1fr 6.5rem 4.5rem 4.5rem;
+      gap: 0.5rem; align-items: center; padding: 0.32rem 0.9rem; font-size: 0.74rem;
+      border-bottom: 1px solid var(--line); border-left: 3px solid transparent;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      animation: live-in 0.25s ease;
+    }
+    @keyframes live-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+    .live-row.ALLOW { border-left-color: var(--allow); }
+    .live-row.REVIEW { border-left-color: var(--review); }
+    .live-row.DECLINE { border-left-color: var(--decline); background: rgba(224, 74, 74, 0.08); }
+    .lr-amt, .lr-ms { text-align: right; font-variant-numeric: tabular-nums; }
+    .lr-cat { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lr-loc { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lr-decision { font-weight: 700; }
+    .live-row.ALLOW .lr-decision { color: var(--allow); }
+    .live-row.REVIEW .lr-decision { color: var(--review); }
+    .live-row.DECLINE .lr-decision { color: var(--decline); }
   </style>
 </head>
 <body>
@@ -211,20 +244,21 @@
       <button data-s="writepath">Write path</button>
       <button data-s="throughput">Throughput</button>
       <button data-s="architecture">Architecture</button>
+      <button data-s="live">Live feed</button>
     </div>
     <p class="hint" id="hint"></p>
     <p class="shortcuts">
-      <kbd>1</kbd>–<kbd>6</kbd> scenarios · <kbd>Enter</kbd> re-run ·
+      <kbd>1</kbd>–<kbd>7</kbd> scenarios · <kbd>Enter</kbd> re-run ·
       <kbd>P</kbd> presentation mode · <kbd>Esc</kbd> overview
     </p>
 
-    <div class="controls">
+    <div class="controls" id="controls">
       <input type="text" id="q" placeholder="customer id, e.g. C000012345" autocomplete="off" spellcheck="false">
       <button class="ghost" id="randomCustomer" type="button">🎲 random customer</button>
       <label class="inline" id="scenarioSelectWrap">scenario
         <select id="scenarioSelect"></select>
       </label>
-      <label class="inline">runs
+      <label class="inline" id="runsWrap">runs
         <select id="runs">
           <option value="1">1</option>
           <option value="5" selected>5</option>
@@ -246,7 +280,7 @@
 
     <div class="decision-row" id="decisionRow" hidden></div>
 
-    <div class="summary">
+    <div class="summary" id="summary">
       <div class="metric redis">
         <div class="engine">Redis</div>
         <div class="time" id="rt">—</div>
@@ -265,7 +299,7 @@
 
     <div class="bars" id="bars"></div>
 
-    <div class="panes">
+    <div class="panes" id="panes">
       <section class="pane redis">
         <h2>Redis <span class="count" id="rcount"></span></h2>
         <div class="q" id="rq"></div>
@@ -276,6 +310,34 @@
         <div class="q" id="pq"></div>
         <div id="pbody"></div>
       </section>
+    </div>
+
+    <div id="liveFeed" hidden>
+      <div class="live-toolbar">
+        <button class="ghost" id="liveToggle" type="button">⏸ pause</button>
+        <span class="live-hint">Every row below is a real customer's checkout — random amount, category and
+          location, scored for real, on both engines at once.</span>
+      </div>
+      <div class="live-panes">
+        <section class="pane redis live-pane">
+          <h2>Redis</h2>
+          <div class="live-stats">
+            <div class="live-stat"><div class="live-num" id="liveRedisRate">0</div><div class="live-lbl">checkouts / sec</div></div>
+            <div class="live-stat"><div class="live-num" id="liveRedisLatency">— ms</div><div class="live-lbl">avg wait per customer</div></div>
+          </div>
+          <div class="live-totals" id="liveRedisTotals">&nbsp;</div>
+          <div class="live-list" id="liveRedisList"></div>
+        </section>
+        <section class="pane pg live-pane">
+          <h2>Postgres</h2>
+          <div class="live-stats">
+            <div class="live-stat"><div class="live-num" id="livePgRate">0</div><div class="live-lbl">checkouts / sec</div></div>
+            <div class="live-stat"><div class="live-num" id="livePgLatency">— ms</div><div class="live-lbl">avg wait per customer</div></div>
+          </div>
+          <div class="live-totals" id="livePgTotals">&nbsp;</div>
+          <div class="live-list" id="livePgList"></div>
+        </section>
+      </div>
     </div>
 
     <div class="progress" id="progress"></div>
@@ -296,6 +358,7 @@
     writepath: { hint: 'Append one new transaction and update the rolling score. Redis: one MULTI/EXEC. Postgres: an explicit transaction, no trimming — the ledger keeps growing.', noQuery: true, isWrite: true },
     throughput: { hint: 'QPS and tail latency under concurrent load. Measured by `npm run bench`, not from this page.', noQuery: true },
     architecture: { hint: 'What actually got built on each side, read live.', noQuery: true },
+    live: { hint: 'Every checkout below is real — a random customer, a random amount/category/location, scored for real, on both engines at once. Watch the rate and the per-customer wait: that\'s the number that decides whether checkout ever makes someone wait.', noQuery: true, isLive: true },
   };
 
   function setPresent(on) {
@@ -313,6 +376,7 @@
     el('backToOverview').hidden = !on;
     el('presentBtn').hidden = false;
     history.replaceState(null, '', on ? '#demo' : '#');
+    if (!on) stopLiveFeed();
     if (on) setScenario(scenario);
   }
   el('enterDemo').addEventListener('click', () => showDemo(true));
@@ -329,18 +393,29 @@
   }
 
   function setScenario(next) {
+    const leavingLive = scenario === 'live' && next !== 'live';
     scenario = next;
     for (const b of el('scenarios').children) b.classList.toggle('active', b.dataset.s === next);
+    if (leavingLive) stopLiveFeed();
     const cfg = SCENARIOS[next];
+    const isLive = Boolean(cfg.isLive);
     el('hint').textContent = cfg.hint;
+    el('controls').style.display = isLive ? 'none' : '';
     el('scenarioSelectWrap').style.display = cfg.showsScenarioSelect ? '' : 'none';
     el('velocityControls').classList.toggle('show', Boolean(cfg.showsVelocity));
     el('q').style.display = cfg.noQuery && next !== 'writepath' ? 'none' : '';
     el('q').placeholder = next === 'writepath' ? 'customer id (optional)' : 'customer id, e.g. C000012345';
-    el('randomCustomer').style.display = next === 'throughput' || next === 'breakdown' || next === 'architecture' ? 'none' : '';
-    document.getElementById('runs').closest('label').style.display = (next === 'throughput' || next === 'architecture') ? 'none' : '';
+    el('randomCustomer').style.display = next === 'throughput' || next === 'breakdown' || next === 'architecture' || isLive ? 'none' : '';
+    el('runsWrap').style.display = (next === 'throughput' || next === 'architecture' || isLive) ? 'none' : '';
     el('decisionRow').hidden = next !== 'score';
-    search();
+    el('summary').hidden = isLive;
+    el('bars').hidden = isLive;
+    el('panes').hidden = isLive;
+    el('method').hidden = isLive;
+    el('progress').hidden = isLive;
+    el('liveFeed').hidden = !isLive;
+    if (isLive) startLiveFeed();
+    else search();
   }
 
   function span(cls, text) {
@@ -578,6 +653,123 @@
     el('method').innerHTML = 'Read live from both engines, not hardcoded. Redis: a Hash + a capped Sorted Set per customer, plus one maintained counter Hash. Postgres: two tables, four indexes, one FK constraint.';
   }
 
+  // Live Feed: several concurrent loops per engine, each pulling a small
+  // batch of brand-new checkouts and scoring them for real. Not a single
+  // request/response like the other tabs — a standing loop, so it gets its
+  // own start/stop lifecycle instead of going through search().
+  const LIVE_WORKERS_PER_ENGINE = 3;
+  const LIVE_BATCH = 3;
+  const LIVE_MAX_ROWS = 16;
+  const LIVE_RATE_WINDOW_MS = 2000;
+  // The measured rate is real and unthrottled (every result counts toward
+  // it) — often well over 1,000/sec, faster than any human can read a row.
+  // Drawing every result would churn the visible list every few
+  // milliseconds, which is both illegible and — since a fresh row's fade-in
+  // animation (250ms) can't finish before it's evicted — renders as
+  // near-invisible, half-opacity text. So the row LIST is throttled to a
+  // human-readable pace independent of the rate NUMBER, which stays honest.
+  const LIVE_MIN_ROW_INTERVAL_MS = 130;
+  let liveRunning = false;
+  let liveGen = 0;
+  let liveHeaderInterval = null;
+  const liveState = {
+    redis: { arrivals: [], latencies: [], totals: { ALLOW: 0, REVIEW: 0, DECLINE: 0 }, lastRenderTs: 0 },
+    postgres: { arrivals: [], latencies: [], totals: { ALLOW: 0, REVIEW: 0, DECLINE: 0 }, lastRenderTs: 0 },
+  };
+
+  function liveRowEl(r) {
+    const row = document.createElement('div');
+    row.className = `live-row ${r.decision}`;
+    const cell = (cls, text) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; return s; };
+    row.append(
+      cell('lr-id', r.id),
+      cell('lr-amt', `$${r.amt.toFixed(2)}`),
+      cell('lr-cat', r.cat),
+      cell('lr-loc', `${r.city}, ${r.state}`),
+      cell('lr-decision', r.decision),
+      cell('lr-ms', `${r.ms.toFixed(2)} ms`),
+    );
+    return row;
+  }
+
+  function updateLiveHeader(engineKey) {
+    const st = liveState[engineKey];
+    const now = performance.now();
+    st.arrivals = st.arrivals.filter((t) => now - t < LIVE_RATE_WINDOW_MS);
+    const rate = Math.round(st.arrivals.length / (LIVE_RATE_WINDOW_MS / 1000));
+    st.latencies = st.latencies.slice(-40);
+    const avgMs = st.latencies.length ? st.latencies.reduce((a, b) => a + b, 0) / st.latencies.length : 0;
+    const prefix = engineKey === 'redis' ? 'liveRedis' : 'livePg';
+    el(`${prefix}Rate`).textContent = rate.toLocaleString();
+    el(`${prefix}Latency`).textContent = st.latencies.length ? `${avgMs.toFixed(2)} ms` : '— ms';
+    const t = st.totals;
+    const total = t.ALLOW + t.REVIEW + t.DECLINE;
+    const pct = (n) => (total ? `${Math.round((n / total) * 100)}%` : '0%');
+    el(`${prefix}Totals`).textContent = total
+      ? `${total.toLocaleString()} processed · ${t.ALLOW.toLocaleString()} allow (${pct(t.ALLOW)}) · ${t.REVIEW.toLocaleString()} review (${pct(t.REVIEW)}) · ${t.DECLINE.toLocaleString()} decline (${pct(t.DECLINE)})`
+      : ' ';
+  }
+
+  async function liveWorker(engineKey, myGen) {
+    const listEl = el(engineKey === 'redis' ? 'liveRedisList' : 'livePgList');
+    while (liveRunning && liveGen === myGen) {
+      try {
+        const d = await (await fetch(`/api/live-batch?engine=${engineKey}&n=${LIVE_BATCH}`)).json();
+        if (liveGen !== myGen) return;
+        if (d.error) throw new Error(d.error);
+        const st = liveState[engineKey];
+        const now = performance.now();
+        for (const r of d.results) {
+          st.arrivals.push(now);
+          st.latencies.push(r.ms);
+          st.totals[r.decision] = (st.totals[r.decision] || 0) + 1;
+          if (now - st.lastRenderTs >= LIVE_MIN_ROW_INTERVAL_MS) {
+            st.lastRenderTs = now;
+            listEl.prepend(liveRowEl(r));
+            while (listEl.children.length > LIVE_MAX_ROWS) listEl.lastChild.remove();
+          }
+        }
+      } catch {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+  }
+
+  function toggleLive() {
+    if (liveRunning) {
+      liveRunning = false;
+      liveGen += 1;
+      if (liveHeaderInterval) { clearInterval(liveHeaderInterval); liveHeaderInterval = null; }
+      el('liveToggle').textContent = '▶ resume';
+    } else {
+      liveRunning = true;
+      liveGen += 1;
+      const myGen = liveGen;
+      for (let i = 0; i < LIVE_WORKERS_PER_ENGINE; i += 1) {
+        liveWorker('redis', myGen);
+        liveWorker('postgres', myGen);
+      }
+      liveHeaderInterval = setInterval(() => { updateLiveHeader('redis'); updateLiveHeader('postgres'); }, 300);
+      el('liveToggle').textContent = '⏸ pause';
+    }
+  }
+  el('liveToggle').addEventListener('click', toggleLive);
+
+  function startLiveFeed() {
+    liveState.redis = { arrivals: [], latencies: [], totals: { ALLOW: 0, REVIEW: 0, DECLINE: 0 }, lastRenderTs: 0 };
+    liveState.postgres = { arrivals: [], latencies: [], totals: { ALLOW: 0, REVIEW: 0, DECLINE: 0 }, lastRenderTs: 0 };
+    el('liveRedisList').replaceChildren();
+    el('livePgList').replaceChildren();
+    updateLiveHeader('redis');
+    updateLiveHeader('postgres');
+    if (liveRunning) toggleLive(); // stop any stray loop before starting clean
+    toggleLive();
+  }
+
+  function stopLiveFeed() {
+    if (liveRunning) toggleLive();
+  }
+
   async function search() {
     const seq = ++inflight;
     const stale = () => seq !== inflight;
@@ -608,7 +800,7 @@
   el('windowMinutes').addEventListener('change', search);
   el('scenarios').addEventListener('click', (e) => { if (e.target.dataset.s) setScenario(e.target.dataset.s); });
 
-  const SCENARIO_KEYS = ['score', 'velocity', 'breakdown', 'writepath', 'throughput', 'architecture'];
+  const SCENARIO_KEYS = ['score', 'velocity', 'breakdown', 'writepath', 'throughput', 'architecture', 'live'];
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { el('q').blur(); showDemo(false); return; }
     const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName);

@@ -68,11 +68,31 @@ re-run — both seeders wipe their engine first.
 | **Write path** (append + rescoring) | one `MULTI`/`EXEC`: `ZADD` + `ZREMRANGEBYRANK` + `HSET` + `HINCRBY` ×2 | `BEGIN`; `INSERT`; `UPDATE`; `COMMIT` |
 | **Concurrent throughput** | `npm run bench` | `npm run bench` |
 | **Architecture** | one Hash + one capped Sorted Set per customer | two tables, four indexes, one FK |
+| **Live feed** | `GET /api/live-batch?engine=redis` in a loop | `GET /api/live-batch?engine=postgres` in a loop |
 
 Both engines run every scoring decision through the exact same function,
 [`src/scoring.js`](src/scoring.js) — whichever store answers, the risk score
 and the ALLOW/REVIEW/DECLINE decision come out of identical code. A latency
 difference is a data-access difference, never a scoring difference.
+
+## Live feed
+
+The **Live Feed** tab is the "does this hold up checkout" answer in one
+glance: real checkouts, real random customers, real scoring, streaming
+through both engines side by side, at whatever rate each engine can sustain.
+Each side shows two numbers that matter to a lender more than any benchmark —
+
+- **checkouts/sec** — how many customers this engine can serve at once
+  without anyone queueing
+- **avg wait per customer** — how long any *individual* customer sits at
+  checkout while their transaction gets scored
+
+The row list is deliberately throttled to a human-readable pace (roughly
+7–8 new rows/sec per side); the rate and latency numbers above it are not —
+they reflect every request, not just the ones drawn on screen. Redis
+consistently runs at roughly double Postgres's rate here at zero extra
+configuration, and neither number ever gets large enough to notice at
+checkout — which is the actual point being made, more than the ratio itself.
 
 ## Observed on one laptop
 

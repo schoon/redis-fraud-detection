@@ -143,4 +143,25 @@ function buildScenario(name, customer, history) {
   return { candidate, injectedHistory: injected, label: scenario.label, description: scenario.description, simulated: Boolean(scenario.simulated) };
 }
 
-module.exports = { SCENARIOS, buildScenario };
+// The mix behind the Live Feed tab — mostly ordinary checkouts, with enough
+// risky ones mixed in that REVIEW/DECLINE shows up within a few seconds of
+// watching, without the feed reading as "everything is fraud."
+const LIVE_FEED_WEIGHTS = [
+  ['typical', 0.70],
+  ['large_unfamiliar_purchase', 0.12],
+  ['velocity_spike', 0.10],
+  ['impossible_travel', 0.05],
+  ['everything_at_once', 0.03],
+];
+
+function pickLiveScenario(random = Math.random) {
+  const r = random();
+  let acc = 0;
+  for (const [key, weight] of LIVE_FEED_WEIGHTS) {
+    acc += weight;
+    if (r < acc) return key;
+  }
+  return 'typical';
+}
+
+module.exports = { SCENARIOS, buildScenario, pickLiveScenario };

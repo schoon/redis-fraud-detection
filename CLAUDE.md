@@ -101,16 +101,42 @@ tab can resolve after a newer one and silently overwrite the UI with stale
 content — this happened during development (the Breakdown tab intermittently
 showed leftover Velocity content) and traced back to a Postgres `GROUP BY`
 query that occasionally took ~800ms under load, arriving after the user had
-already switched tabs. If you add a seventh tab, its render function needs
-this guard too.
+already switched tabs. If you add another tab, its render function needs
+this guard too (the Live Feed tab is the exception — it doesn't go through
+`search()`/`runXxx()` at all; see below).
 
 **CSS: don't give an element both a `hidden` attribute and an unconditional
 `display` value on its class.** `[hidden]` and a class selector have equal
 specificity, and the class rule — being an author rule — wins over the `hidden`
-attribute regardless of source order. `.decision-row` had exactly this bug
-(`display: flex` unconditionally, defeating `hidden`); the fix is an explicit
-`.decision-row[hidden] { display: none; }` override. Same trap applies to any
-future element toggled via the `hidden` attribute rather than a class.
+attribute regardless of source order. `.decision-row`, `.summary`, and
+`.panes` all needed an explicit `<selector>[hidden] { display: none; }`
+override for exactly this reason (they're toggled via the `hidden` attribute
+to hide them on the Live Feed tab, and each has an unconditional
+`display: flex`/`grid`). Same trap applies to any future element toggled via
+`hidden` rather than a class.
+
+**CSS: `flex: 1` inside a flex column with no definite height silently
+collapses to zero height.** `.live-list` was originally `flex: 1; max-height:
+460px;` inside `.live-pane` (`display: flex; flex-direction: column`). `flex:
+1` expands to `flex-basis: 0%`, and since `.live-pane` has no explicit height
+of its own — it sizes to its children — there's no free space for `flex-grow`
+to distribute, so the list rendered at 0 height. The rows were genuinely in
+the DOM (confirmed via `element.children.length`) but invisible. Fixed by
+giving `.live-list` a plain `height: 460px` instead of relying on flex-grow.
+If a pane-like element isn't filling the space you expect, check whether its
+flex ancestor actually has a definite height to grow into.
+
+**Live Feed: the displayed row rate is intentionally decoupled from the
+measured rate.** At 3 workers per engine, real throughput is easily
+1,000–2,000+/sec — far faster than a human can read a scrolling row, and
+faster than the row's 250ms fade-in animation can complete before the row is
+evicted from the capped 16-row list, which made rows render as
+near-invisible half-opacity text. `liveState[engine].lastRenderTs` throttles
+DOM insertion to `LIVE_MIN_ROW_INTERVAL_MS` (130ms) per engine, while the
+rate/latency header numbers are computed from *every* result, throttled or
+not. Don't remove the throttle to "show more rows" — it will reintroduce the
+invisible-text bug — and don't let the throttle leak into the header
+numbers, which need to stay honest.
 
 ## Redis data model
 
@@ -171,7 +197,7 @@ src/
   config.js        constants: ports, corpus size, PRNG seed
   generate.js       synthetic corpus -> data/customers.jsonl
   scoring.js        the single scoring function used by both engines
-  scenarios.js      the 5 candidate-transaction presets
+  scenarios.js      the 5 candidate-transaction presets + pickLiveScenario's weighted mix for the Live Feed tab
   redis-store.js    Redis queries + appendTransaction
   postgres-store.js Postgres queries + appendTransaction
   seed-redis.js     bulk loader

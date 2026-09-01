@@ -7,7 +7,7 @@ const { REDIS_URL, PORT, COUNT, TXNS_PER_CUSTOMER } = require('./config');
 const { createStore } = require('./redis-store');
 const pg = require('./postgres-store');
 const { scoreTransaction, VELOCITY_WINDOW_MS } = require('./scoring');
-const { SCENARIOS, buildScenario } = require('./scenarios');
+const { SCENARIOS, buildScenario, pickLiveScenario } = require('./scenarios');
 
 const app = express();
 app.use(express.json());
@@ -246,6 +246,48 @@ app.post('/api/writepath', async (req, res) => {
     });
   } catch (err) {
     console.error('writepath failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/live-batch?engine=redis&n=4
+//
+// Powers the Live Feed tab: a small batch of NEW candidate checkouts, built
+// against real customers and scored for real against the requested engine —
+// not a canned animation. Each item's `ms` is that one customer's actual
+// wait: the time to fetch their last-50-transaction history from this engine
+// and run the same scoreTransaction() everything else in this demo uses.
+// The UI runs several of these loops concurrently per engine to show
+// sustained rate, not just one-off latency.
+app.get('/api/live-batch', async (req, res) => {
+  const engine = req.query.engine === 'postgres' ? 'postgres' : 'redis';
+  const n = Math.min(Math.max(Number(req.query.n) || 4, 1), 20);
+  const store = engine === 'redis' ? redis : pg;
+
+  try {
+    const results = [];
+    for (let i = 0; i < n; i += 1) {
+      const id = randomCustomerId();
+      const t0 = nowMs();
+      const data = await store.getCustomerAndHistory(id);
+      if (!data) continue;
+      const scenarioKey = pickLiveScenario();
+      const { candidate, injectedHistory } = buildScenario(scenarioKey, data.customer, data.history);
+      const history = injectedHistory
+        ? [...data.history.slice(0, TXNS_PER_CUSTOMER - injectedHistory.length), ...injectedHistory]
+        : data.history;
+      const result = scoreTransaction(data.customer, history, candidate);
+      const ms = nowMs() - t0;
+      results.push({
+        id, city: data.customer.city, state: data.customer.state,
+        amt: candidate.amt, cat: candidate.cat,
+        decision: result.decision, risk: result.risk,
+        ms: Number(ms.toFixed(3)),
+      });
+    }
+    res.json({ engine, results });
+  } catch (err) {
+    console.error('live-batch failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
