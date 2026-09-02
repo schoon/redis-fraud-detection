@@ -149,6 +149,7 @@ async function runEngine(engine, concurrency, durationMs) {
     p50: Number(percentile(all, 50).toFixed(3)),
     p95: Number(percentile(all, 95).toFixed(3)),
     p99: Number(percentile(all, 99).toFixed(3)),
+    p999: Number(percentile(all, 99.9).toFixed(3)),
     max: Number((all[all.length - 1] || 0).toFixed(3)),
     clientCpuRatio: Number((cpuMs / wallMs).toFixed(2)),
   };
@@ -181,12 +182,12 @@ async function main() {
   const r = out.engines.redis;
   const p = out.engines.postgres;
 
-  console.log('\n           QPS        p50       p95       p99       max     errors');
+  console.log('\n           QPS        p50       p95       p99     p99.9       max     errors');
   for (const e of [r, p]) {
     console.log(
       `  ${e.engine.padEnd(8)} ${String(e.qps).padStart(8)}  `
       + `${e.p50.toFixed(2).padStart(8)}  ${e.p95.toFixed(2).padStart(8)}  `
-      + `${e.p99.toFixed(2).padStart(8)}  ${e.max.toFixed(2).padStart(8)}  ${String(e.errors).padStart(6)}`
+      + `${e.p99.toFixed(2).padStart(8)}  ${e.p999.toFixed(2).padStart(8)}  ${e.max.toFixed(2).padStart(8)}  ${String(e.errors).padStart(6)}`
     );
   }
   console.log(`\n  throughput ratio: ${(r.qps / p.qps).toFixed(2)}x  (redis / postgres)`);

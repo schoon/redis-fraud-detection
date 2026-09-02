@@ -85,6 +85,15 @@ throughput *worse* — 16 workers × 4 connections is 64 OS-level Postgres
 backend processes competing for 14 cores. Full numbers in
 [docs/METHODOLOGY.md](docs/METHODOLOGY.md#postgres-connection-pool-scaling).
 
+**Don't add p99/p99.9 to a tab whose sample size can't support it.** Score,
+Velocity, and Breakdown cap at 11 runs via the `runs` dropdown — a "p99" of
+11 samples is just the max with a misleading label. `bench.js` (thousands of
+samples) and the Live Feed tab (a rolling window of up to
+`LIVE_LATENCY_WINDOW` = 5,000 recent checkouts per engine, in
+`public/index.html`) are the only two places with enough volume for p99.9 to
+mean what it claims. If you add percentiles somewhere else, make sure the
+sample count is there first.
+
 **`validate.js`'s write-path check mutates real state**, on both engines —
 it's testing the actual write path, not a mock of it. So does the UI's Write
 Path tab. Re-run `npm run seed` after either before taking or quoting any

@@ -167,6 +167,11 @@
     .pane.redis .live-num { color: var(--redis); }
     .pane.pg .live-num { color: var(--pg); }
     .live-lbl { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.15rem; }
+    .live-latency-row { display: flex; gap: 1.5rem; padding: 0 0.9rem 0.75rem; }
+    .live-lat-num { font-size: 1.05rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+    .pane.redis .live-lat-num { color: var(--redis); }
+    .pane.pg .live-lat-num { color: var(--pg); }
+    .live-lat-lbl { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 0.1rem; }
     .live-totals { padding: 0 0.9rem 0.75rem; font-size: 0.75rem; color: var(--muted); border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
     .live-list { height: 460px; overflow: hidden; }
     .live-row {
@@ -209,13 +214,14 @@
     <div class="stat-row" id="statRow"></div>
 
     <p class="scenario-line">
-      Six scenarios from a real-time credit decisioning workflow:
+      Seven scenarios from a real-time credit decisioning workflow:
       <span class="tag-pill">score &amp; decide</span>
       <span class="tag-pill">velocity</span>
       <span class="tag-pill">portfolio breakdown</span>
       <span class="tag-pill">write path</span>
       <span class="tag-pill">concurrent throughput</span>
       <span class="tag-pill">architecture</span>
+      <span class="tag-pill">live feed</span>
     </p>
 
     <div class="intro-foot">
@@ -323,7 +329,11 @@
           <h2>Redis</h2>
           <div class="live-stats">
             <div class="live-stat"><div class="live-num" id="liveRedisRate">0</div><div class="live-lbl">checkouts / sec</div></div>
-            <div class="live-stat"><div class="live-num" id="liveRedisLatency">— ms</div><div class="live-lbl">avg wait per customer</div></div>
+          </div>
+          <div class="live-latency-row">
+            <div class="live-lat"><div class="live-lat-num" id="liveRedisP50">— ms</div><div class="live-lat-lbl">p50 wait</div></div>
+            <div class="live-lat"><div class="live-lat-num" id="liveRedisP99">— ms</div><div class="live-lat-lbl">p99 wait</div></div>
+            <div class="live-lat"><div class="live-lat-num" id="liveRedisP999">— ms</div><div class="live-lat-lbl">p99.9 wait</div></div>
           </div>
           <div class="live-totals" id="liveRedisTotals">&nbsp;</div>
           <div class="live-list" id="liveRedisList"></div>
@@ -332,7 +342,11 @@
           <h2>Postgres</h2>
           <div class="live-stats">
             <div class="live-stat"><div class="live-num" id="livePgRate">0</div><div class="live-lbl">checkouts / sec</div></div>
-            <div class="live-stat"><div class="live-num" id="livePgLatency">— ms</div><div class="live-lbl">avg wait per customer</div></div>
+          </div>
+          <div class="live-latency-row">
+            <div class="live-lat"><div class="live-lat-num" id="livePgP50">— ms</div><div class="live-lat-lbl">p50 wait</div></div>
+            <div class="live-lat"><div class="live-lat-num" id="livePgP99">— ms</div><div class="live-lat-lbl">p99 wait</div></div>
+            <div class="live-lat"><div class="live-lat-num" id="livePgP999">— ms</div><div class="live-lat-lbl">p99.9 wait</div></div>
           </div>
           <div class="live-totals" id="livePgTotals">&nbsp;</div>
           <div class="live-list" id="livePgList"></div>
@@ -358,7 +372,7 @@
     writepath: { hint: 'Append one new transaction and update the rolling score. Redis: one MULTI/EXEC. Postgres: an explicit transaction, no trimming — the ledger keeps growing.', noQuery: true, isWrite: true },
     throughput: { hint: 'QPS and tail latency under concurrent load. Measured by `npm run bench`, not from this page.', noQuery: true },
     architecture: { hint: 'What actually got built on each side, read live.', noQuery: true },
-    live: { hint: 'Every checkout below is real — a random customer, a random amount/category/location, scored for real, on both engines at once. Watch the rate and the per-customer wait: that\'s the number that decides whether checkout ever makes someone wait.', noQuery: true, isLive: true },
+    live: { hint: 'Every checkout below is real — a random customer, a random amount/category/location, scored for real, on both engines at once. p50 is the typical customer\'s wait; p99.9 is the unluckiest one in a thousand — watch how little the tail moves.', noQuery: true, isLive: true },
   };
 
   function setPresent(on) {
@@ -619,19 +633,22 @@
     const r = d.engines.redis, p = d.engines.postgres;
     el('rt').textContent = `${r.qps.toLocaleString()} q/s`;
     el('pt').textContent = `${p.qps.toLocaleString()} q/s`;
-    el('rsub').textContent = `p50 ${r.p50}ms · p99 ${r.p99}ms`;
-    el('psub').textContent = `p50 ${p.p50}ms · p99 ${p.p99}ms`;
+    el('rsub').textContent = `p50 ${r.p50}ms · p99.9 ${r.p999}ms`;
+    el('psub').textContent = `p50 ${p.p50}ms · p99.9 ${p.p999}ms`;
     el('verdict').classList.remove('warn');
     el('vx').textContent = `${(r.qps / p.qps).toFixed(2)}×`;
     el('rcount').textContent = `${d.concurrency} workers`; el('pcount').textContent = `${d.concurrency} workers`;
     el('rq').textContent = `concurrency=${d.concurrency} duration=${d.durationSec}s cores=${d.cores}`;
     el('pq').textContent = el('rq').textContent;
-    const rows = (e) => [['throughput', `${e.qps.toLocaleString()} q/s`], ['p50', `${e.p50} ms`], ['p95', `${e.p95} ms`], ['p99', `${e.p99} ms`], ['max', `${e.max} ms`], ['client CPU', `${e.clientCpuRatio} of ${d.cores} cores`]];
+    const rows = (e) => [['throughput', `${e.qps.toLocaleString()} q/s`], ['p50', `${e.p50} ms`], ['p95', `${e.p95} ms`], ['p99', `${e.p99} ms`], ['p99.9', `${e.p999} ms`], ['max', `${e.max} ms`], ['client CPU', `${e.clientCpuRatio} of ${d.cores} cores`]];
     const toRows = (data) => { const tb = document.createElement('div'); tb.replaceChildren(...data.map(([k,v]) => { const row=document.createElement('div'); row.className='factor-row'; row.append(span('fname',k), span('fpts',v)); return row; })); return tb; };
     el('rbody').replaceChildren(toRows(rows(r)));
     el('pbody').replaceChildren(toRows(rows(p)));
-    renderBars(r.p99, p.p99);
-    el('method').innerHTML = 'Real-time score &amp; decision under concurrent load, worker_threads, engines run sequentially so they never compete for the same cores. Full sweep and findings in docs/METHODOLOGY.md.';
+    renderBars(r.p999, p.p999);
+    el('method').innerHTML =
+      `Real-time score &amp; decision under concurrent load, worker_threads, engines run sequentially so they never compete for the same cores. `
+      + `<b>p99.9 is the number that matters at checkout</b> — the median tells you the typical customer's wait, but p99.9 tells you what the unluckiest one in a thousand experiences. `
+      + `Here that's ${r.p999} ms on Redis against ${p.p999} ms on Postgres — neither holds anyone up, but the gap widens the further out the tail you look. Full sweep and findings in docs/METHODOLOGY.md.`;
   }
 
   async function runArchitecture(stale) {
@@ -669,6 +686,10 @@
   // near-invisible, half-opacity text. So the row LIST is throttled to a
   // human-readable pace independent of the rate NUMBER, which stays honest.
   const LIVE_MIN_ROW_INTERVAL_MS = 130;
+  // p99.9 needs a real sample size to mean anything — at combined rates
+  // in the thousands/sec, 5,000 samples is only a few seconds of history,
+  // enough for ~5 data points in the tail 0.1% rather than 0 or 1.
+  const LIVE_LATENCY_WINDOW = 5000;
   let liveRunning = false;
   let liveGen = 0;
   let liveHeaderInterval = null;
@@ -692,16 +713,25 @@
     return row;
   }
 
+  function livePercentile(sorted, p) {
+    if (!sorted.length) return 0;
+    const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+    return sorted[idx];
+  }
+
   function updateLiveHeader(engineKey) {
     const st = liveState[engineKey];
     const now = performance.now();
     st.arrivals = st.arrivals.filter((t) => now - t < LIVE_RATE_WINDOW_MS);
     const rate = Math.round(st.arrivals.length / (LIVE_RATE_WINDOW_MS / 1000));
-    st.latencies = st.latencies.slice(-40);
-    const avgMs = st.latencies.length ? st.latencies.reduce((a, b) => a + b, 0) / st.latencies.length : 0;
+    st.latencies = st.latencies.slice(-LIVE_LATENCY_WINDOW);
+    const sortedLatencies = [...st.latencies].sort((a, b) => a - b);
     const prefix = engineKey === 'redis' ? 'liveRedis' : 'livePg';
     el(`${prefix}Rate`).textContent = rate.toLocaleString();
-    el(`${prefix}Latency`).textContent = st.latencies.length ? `${avgMs.toFixed(2)} ms` : '— ms';
+    const fmt = (p) => (sortedLatencies.length ? `${livePercentile(sortedLatencies, p).toFixed(2)} ms` : '— ms');
+    el(`${prefix}P50`).textContent = fmt(50);
+    el(`${prefix}P99`).textContent = fmt(99);
+    el(`${prefix}P999`).textContent = fmt(99.9);
     const t = st.totals;
     const total = t.ALLOW + t.REVIEW + t.DECLINE;
     const pct = (n) => (total ? `${Math.round((n / total) * 100)}%` : '0%');
@@ -863,7 +893,7 @@
         const r = benchStat.engines.redis, p = benchStat.engines.postgres;
         cards.push(
           stat(`${(r.qps / p.qps).toFixed(1)}×`, 'higher throughput, Redis', `${r.qps.toLocaleString()} q/s vs ${p.qps.toLocaleString()} q/s at ${benchStat.concurrency}-way concurrency`),
-          stat(`${r.p50} ms`, 'p50 latency, real-time score', `vs ${p.p50} ms Postgres, same query, same host`),
+          stat(`${r.p999} ms`, 'p99.9 latency, real-time score', `the unluckiest 1-in-1,000 customer · p50 ${r.p50} ms · Postgres p99.9 ${p.p999} ms`),
         );
       }
       cards.push(stat('0', 'artificial CPU caps', 'same Docker host, same cores, neither engine throttled'));

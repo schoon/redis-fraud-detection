@@ -80,19 +80,23 @@ difference is a data-access difference, never a scoring difference.
 The **Live Feed** tab is the "does this hold up checkout" answer in one
 glance: real checkouts, real random customers, real scoring, streaming
 through both engines side by side, at whatever rate each engine can sustain.
-Each side shows two numbers that matter to a lender more than any benchmark —
+Each side shows the numbers that matter to a lender more than any benchmark —
 
 - **checkouts/sec** — how many customers this engine can serve at once
   without anyone queueing
-- **avg wait per customer** — how long any *individual* customer sits at
-  checkout while their transaction gets scored
+- **p50 / p99 / p99.9 wait** — how long the typical customer sits at
+  checkout, and how long the unluckiest one in a hundred, then in a
+  thousand, sits — computed live from a rolling window of the last ~5,000
+  scored checkouts on each side, so it's a real (if short-horizon)
+  percentile, not a single sample
 
 The row list is deliberately throttled to a human-readable pace (roughly
 7–8 new rows/sec per side); the rate and latency numbers above it are not —
 they reflect every request, not just the ones drawn on screen. Redis
 consistently runs at roughly double Postgres's rate here at zero extra
-configuration, and neither number ever gets large enough to notice at
-checkout — which is the actual point being made, more than the ratio itself.
+configuration, and its tail latency (p99.9) stays close to its own median
+while Postgres's stretches further — the same pattern as the
+[Concurrent throughput](#concurrent-throughput) benchmark, just watched live.
 
 ## Observed on one laptop
 
@@ -130,14 +134,22 @@ npm run bench
 npm run bench -- --concurrency=8 --duration=15
 ```
 
-**Measured 2026-09-01, concurrency 16, 8s per engine:**
+**Measured 2026-09-02, concurrency 16, 8s per engine:**
 
-| Engine | QPS | p50 | p95 | p99 | max | client CPU |
-| ------ | --- | --- | --- | --- | --- | ---------- |
-| Redis | 22,827 | 0.63 ms | 1.09 ms | 1.42 ms | 44.2 ms | 19% of 14 cores |
-| Postgres | 7,433 | 1.89 ms | 3.35 ms | 4.67 ms | 78.6 ms | 15% of 14 cores |
+| Engine | QPS | p50 | p95 | p99 | p99.9 | max | client CPU |
+| ------ | --- | --- | --- | --- | ----- | --- | ---------- |
+| Redis | 23,360 | 0.62 ms | 1.03 ms | 1.27 ms | 1.78 ms | 39.1 ms | 19% of 14 cores |
+| Postgres | 9,929 | 1.34 ms | 2.51 ms | 3.66 ms | 8.42 ms | 93.3 ms | 18% of 14 cores |
 
-**3.07× throughput.** Unlike a licensed database with a CPU-count cap, neither
+**p99.9 is the number that answers "does this ever hold up a customer."**
+The median tells you about the typical checkout; p99.9 tells you what the
+unluckiest one in a thousand actually experiences. Here Redis's tail barely
+moves off its median (0.62 ms → 1.78 ms) while Postgres's stretches
+considerably further (1.34 ms → 8.42 ms) — neither is slow enough to notice
+at checkout at this concurrency, but the gap is real and it widens the
+further out the tail you look.
+
+**2.35× throughput.** Unlike a licensed database with a CPU-count cap, neither
 engine here is artificially constrained — both share the full 14-core host,
 so this ratio is not caveated the way a licensed-engine comparison would be.
 Neither client is CPU-bound at these numbers (see

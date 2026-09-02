@@ -42,6 +42,13 @@ benchmark: the first thing a customer's DBA will do is read
 - The UI never claims two engines agree unless they returned the same
   decision (score/velocity/breakdown all check this and surface a
   "disagreement" state instead of a speed multiplier if they don't).
+- **Percentiles only appear where the sample size supports them.** The
+  Score, Velocity, and Breakdown tabs cap at 11 runs — a "p99" of 11 samples
+  is just the max wearing a misleading label, so those tabs report the
+  median only. `npm run bench` (thousands of samples per engine) and the
+  Live Feed tab (a live rolling window of ~5,000 recent checkouts per
+  engine) are the two places in this demo with enough samples for p99 and
+  p99.9 to mean what they claim.
 
 ## Write-time vs read-time: the breakdown numbers are not the same query twice
 
@@ -124,12 +131,12 @@ sweep first.** The current `max: 1` is load-bearing, not an oversight.
 `npm run bench` loads both engines sequentially, never at the same time, so
 they never compete for the same cores while being measured.
 
-| Concurrency | Redis QPS | Postgres QPS | Redis p99 | Postgres p99 |
-| ----------- | --------- | ------------- | --------- | ------------- |
-| 16 | 22,827 | 7,433 | 1.42 ms | 4.67 ms |
+| Concurrency | Redis QPS | Postgres QPS | Redis p99 | Redis p99.9 | Postgres p99 | Postgres p99.9 |
+| ----------- | --------- | ------------- | --------- | ----------- | ------------- | -------------- |
+| 16 | 23,360 | 9,929 | 1.27 ms | 1.78 ms | 3.66 ms | 8.42 ms |
 
 Neither client is CPU-bound at this concurrency — the load generator used
-19% of the host driving Redis and 15% driving Postgres, both far from
+19% of the host driving Redis and 18% driving Postgres, both far from
 saturation, so the QPS gap reflects the engines, not the generator. (Client
 CPU is measured once, in the main thread, after each run — summing
 `process.cpuUsage()` per worker would inflate it by the worker count, since
@@ -137,8 +144,18 @@ each worker's reading is already the whole process's usage, not just that
 worker's share.)
 
 Unlike a licensed-database comparison, **there is no CPU cap to caveat
-here** — both engines share the full 14-core host. The 3.07× throughput
+here** — both engines share the full 14-core host. The 2.35× throughput
 ratio is a like-for-like measurement in that specific sense.
+
+**p99.9 is where the two engines diverge most.** From p50 to p99.9, Redis's
+latency grows about 2.9× (0.62 ms → 1.78 ms); Postgres's grows about 6.3×
+(1.34 ms → 8.42 ms). Both are well within what a checkout flow can absorb
+at this concurrency, so don't oversell it as "Postgres makes customers
+wait" — it doesn't, at this load. What the tail *does* show honestly:
+Redis's latency distribution is tighter, and the gap between the two
+engines widens the further out you look, which is exactly what you'd
+expect from a single-key in-memory lookup versus a B-tree probe that has
+to contend with buffer-cache and lock-manager variance under load.
 
 ## Impossible travel alone never DECLINEs
 
